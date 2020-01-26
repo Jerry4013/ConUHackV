@@ -1,6 +1,14 @@
 package conuhackv.back.service;
 
-
+import com.google.api.gax.paging.Page;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.cloud.storage.Bucket;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageOptions;
+import com.google.cloud.vision.v1.*;
+import com.google.common.collect.Lists;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.Descriptors;
 import conuhackv.back.dataobject.Image;
 import conuhackv.back.model.ImageModel;
 import conuhackv.back.repository.ImageJpaRepository;
@@ -18,6 +26,12 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.mail.MessagingException;
 import javax.mail.internet.MimeMessage;
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class ImageServiceImpl implements ImageService {
@@ -45,7 +59,7 @@ public class ImageServiceImpl implements ImageService {
 
     @Override
     @Transactional
-    public ImageModel uploadImage(ImageModel imageModel) {
+    public ImageModel uploadImage(ImageModel imageModel) throws IOException {
         if (imageModel == null) {
             return null;
         }
@@ -76,28 +90,60 @@ public class ImageServiceImpl implements ImageService {
         return newImageModel;
     }
 
-    private boolean isIncident (byte[] bytes) {
-//        URL url = new URL(googleURL);
-//        HttpURLConnection con = (HttpURLConnection) url.openConnection();
-//        con.setRequestMethod("GET");
-//
-//
-//        AnnotateImageResponse response = this.cloudVisionTemplate.analyzeImage(
-//                this.resourceLoader.getResource(imageUrl), Feature.Type.LABEL_DETECTION);
-//
-//        Map<String, Float> imageLabels =
-//                response.getLabelAnnotationsList()
-//                        .stream()
-//                        .collect(
-//                                Collectors.toMap(
-//                                        EntityAnnotation::getDescription,
-//                                        EntityAnnotation::getScore,
-//                                        (u, v) -> {
-//                                            throw new IllegalStateException(String.format("Duplicate key %s", u));
-//                                        },
-//                                        LinkedHashMap::new));
+    private boolean isIncident (byte[] bytes) throws IOException {
+        authExplicit("C:\\code\\ConUHack\\ConUhack2020-557deed1dc4e.json");
+        try (ImageAnnotatorClient vision = ImageAnnotatorClient.create()) {
 
-        return true;
+            ByteString imgBytes = ByteString.copyFrom(bytes);
+
+            // Builds the image annotation request
+            List<AnnotateImageRequest> requests = new ArrayList<>();
+            com.google.cloud.vision.v1.Image img = com.google.cloud.vision.v1.Image.newBuilder().setContent(imgBytes).build();
+            Feature feat = Feature.newBuilder().setType(Feature.Type.LABEL_DETECTION).build();
+            AnnotateImageRequest request = AnnotateImageRequest.newBuilder()
+                    .addFeatures(feat)
+                    .setImage(img)
+                    .build();
+            requests.add(request);
+
+            // Performs label detection on the image file
+            BatchAnnotateImagesResponse response = vision.batchAnnotateImages(requests);
+            List<AnnotateImageResponse> responses = response.getResponsesList();
+
+            for (AnnotateImageResponse res : responses) {
+                if (res.hasError()) {
+                    System.out.printf("Error: %s\n", res.getError().getMessage());
+                    return false;
+                }
+                for (EntityAnnotation annotation : res.getLabelAnnotationsList()) {
+                    Map<Descriptors.FieldDescriptor, Object> fields = annotation.getAllFields();
+                    for (Map.Entry<Descriptors.FieldDescriptor, Object> entry : fields.entrySet()) {
+                        if (entry.getKey().toString().equals("google.cloud.vision.v1.EntityAnnotation.description")) {
+                            String value = entry.getValue().toString();
+                            System.out.printf("%s : %s\n", entry.getKey(), value);
+                            if (value.equals("Flood") || value.equals("Flooding")) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    static void authExplicit(String jsonPath) throws IOException {
+        // You can specify a credential file by providing a path to GoogleCredentials.
+        // Otherwise credentials are read from the GOOGLE_APPLICATION_CREDENTIALS environment variable.
+        GoogleCredentials credentials = GoogleCredentials.fromStream(new FileInputStream(jsonPath))
+                .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
+        Storage storage = StorageOptions.newBuilder().setCredentials(credentials).build().getService();
+
+        System.out.println("Buckets:");
+        Page<Bucket> buckets = storage.list();
+        for (Bucket bucket : buckets.iterateAll()) {
+            System.out.println(bucket.toString());
+        }
     }
 
     private String htmlContent(String id) {

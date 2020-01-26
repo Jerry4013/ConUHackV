@@ -13,6 +13,6 @@ import java.io.IOException;
 
 public interface ImageService {
 
-    ImageModel uploadImage(ImageModel imageModel);
+    ImageModel uploadImage(ImageModel imageModel) throws IOException;
 
 }
