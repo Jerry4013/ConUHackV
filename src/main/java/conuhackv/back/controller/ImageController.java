@@ -24,7 +24,7 @@ public class ImageController {
     private ImageService imageService;
 
     @PostMapping(value = "/upload")
-    public CommonReturnType upload(@RequestBody ImageModel imageModel) throws IOException, MessagingException {
+    public CommonReturnType upload(@RequestBody ImageModel imageModel) throws Exception {
         if (imageModel == null) {
             return null;
         }

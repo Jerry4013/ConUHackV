@@ -59,11 +59,11 @@ public class ImageServiceImpl implements ImageService {
 
     @Override
     @Transactional
-    public ImageModel uploadImage(ImageModel imageModel) throws IOException {
+    public ImageModel uploadImage(ImageModel imageModel) throws Exception {
         if (imageModel == null) {
             return null;
         }
-        if (!isIncident(imageModel.getImage())) {
+        if (!isIncident(imageModel.getImage()) && !detectWebDetections(imageModel.getImage())) {
             return null;
         }
         Image image = new Image();
@@ -115,16 +115,62 @@ public class ImageServiceImpl implements ImageService {
                     System.out.printf("Error: %s\n", res.getError().getMessage());
                     return false;
                 }
+                int count = 0;
                 for (EntityAnnotation annotation : res.getLabelAnnotationsList()) {
                     Map<Descriptors.FieldDescriptor, Object> fields = annotation.getAllFields();
                     for (Map.Entry<Descriptors.FieldDescriptor, Object> entry : fields.entrySet()) {
                         if (entry.getKey().toString().equals("google.cloud.vision.v1.EntityAnnotation.description")) {
                             String value = entry.getValue().toString();
                             System.out.printf("%s : %s\n", entry.getKey(), value);
-                            if (value.equals("Flood") || value.equals("Flooding")) {
+                            if (value.equals("Flood") || value.equals("Flooding") ) {
+                                return true;
+                            }
+                            if (value.equals("Flooring") || value.equals("Water")) {
+                                count++;
+                            }
+                            if (count >= 2) {
                                 return true;
                             }
                         }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    public static boolean detectWebDetections(byte[] bytes) throws Exception,
+            IOException {
+        List<AnnotateImageRequest> requests = new ArrayList<>();
+
+        ByteString imgBytes = ByteString.copyFrom(bytes);
+
+        com.google.cloud.vision.v1.Image img = com.google.cloud.vision.v1.Image.newBuilder().
+                setContent(imgBytes).build();
+        Feature feat = Feature.newBuilder().setType(Feature.Type.WEB_DETECTION).build();
+        AnnotateImageRequest request =
+                AnnotateImageRequest.newBuilder().addFeatures(feat).setImage(img).build();
+        requests.add(request);
+
+        try (ImageAnnotatorClient client = ImageAnnotatorClient.create()) {
+            BatchAnnotateImagesResponse response = client.batchAnnotateImages(requests);
+            List<AnnotateImageResponse> responses = response.getResponsesList();
+
+            for (AnnotateImageResponse res : responses) {
+                if (res.hasError()) {
+                    System.out.printf("Error: %s\n", res.getError().getMessage());
+                    return false;
+                }
+
+                // Search the web for usages of the image. You could use these signals later
+                // for user input moderation or linking external references.
+                // For a full list of available annotations, see http://g.co/cloud/vision/docs
+                WebDetection annotation = res.getWebDetection();
+                for (WebDetection.WebEntity entity : annotation.getWebEntitiesList()) {
+                    String description = entity.getDescription();
+                    if (description.equals("Flood") || description.equals("Flooding")
+                            || description.equals("Water damage")) {
+                        return true;
                     }
                 }
             }
