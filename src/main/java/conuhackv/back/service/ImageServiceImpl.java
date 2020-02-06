@@ -17,7 +17,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
 import org.springframework.core.io.FileSystemResource;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -26,9 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.mail.MessagingException;
 import javax.mail.internet.MimeMessage;
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -42,11 +38,17 @@ public class ImageServiceImpl implements ImageService {
     @Autowired
     private JavaMailSender mailSender;
 
+    @Value("${google.jsonPath}")
+    private String jsonPath;
+
     @Value("${spring.mail.username}")
     private String from;
 
     @Value("${googleURL}")
     private String googleURL;
+
+    @Value("${google.auth}")
+    private String elements;
 
     @Value("${email.title}")
     private String emailTitle;
@@ -91,12 +93,11 @@ public class ImageServiceImpl implements ImageService {
     }
 
     private boolean isIncident (byte[] bytes) throws IOException {
-        authExplicit("C:\\code\\ConUHack\\ConUhack2020-557deed1dc4e.json");
+        authExplicit(jsonPath);
         try (ImageAnnotatorClient vision = ImageAnnotatorClient.create()) {
 
             ByteString imgBytes = ByteString.copyFrom(bytes);
 
-            // Builds the image annotation request
             List<AnnotateImageRequest> requests = new ArrayList<>();
             com.google.cloud.vision.v1.Image img = com.google.cloud.vision.v1.Image.newBuilder().setContent(imgBytes).build();
             Feature feat = Feature.newBuilder().setType(Feature.Type.LABEL_DETECTION).build();
@@ -106,7 +107,6 @@ public class ImageServiceImpl implements ImageService {
                     .build();
             requests.add(request);
 
-            // Performs label detection on the image file
             BatchAnnotateImagesResponse response = vision.batchAnnotateImages(requests);
             List<AnnotateImageResponse> responses = response.getResponsesList();
 
@@ -139,8 +139,7 @@ public class ImageServiceImpl implements ImageService {
         return false;
     }
 
-    public static boolean detectWebDetections(byte[] bytes) throws Exception,
-            IOException {
+    public static boolean detectWebDetections(byte[] bytes) throws Exception {
         List<AnnotateImageRequest> requests = new ArrayList<>();
 
         ByteString imgBytes = ByteString.copyFrom(bytes);
@@ -162,9 +161,6 @@ public class ImageServiceImpl implements ImageService {
                     return false;
                 }
 
-                // Search the web for usages of the image. You could use these signals later
-                // for user input moderation or linking external references.
-                // For a full list of available annotations, see http://g.co/cloud/vision/docs
                 WebDetection annotation = res.getWebDetection();
                 for (WebDetection.WebEntity entity : annotation.getWebEntitiesList()) {
                     String description = entity.getDescription();
@@ -182,7 +178,7 @@ public class ImageServiceImpl implements ImageService {
         // You can specify a credential file by providing a path to GoogleCredentials.
         // Otherwise credentials are read from the GOOGLE_APPLICATION_CREDENTIALS environment variable.
         GoogleCredentials credentials = GoogleCredentials.fromStream(new FileInputStream(jsonPath))
-                .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
+                .createScoped(Lists.newArrayList("elements"));
         Storage storage = StorageOptions.newBuilder().setCredentials(credentials).build().getService();
 
         System.out.println("Buckets:");
@@ -209,32 +205,4 @@ public class ImageServiceImpl implements ImageService {
         mailSender.send(message);
     }
 
-//    public static void detectLabels(String filePath, PrintStream out) throws Exception, IOException {
-//        List<AnnotateImageRequest> requests = new ArrayList<>();
-//
-//        ByteString imgBytes = ByteString.readFrom(new FileInputStream(filePath));
-//
-//        Image img = Image.newBuilder().setContent(imgBytes).build();
-//        Feature feat = Feature.newBuilder().setType(Feature.Type.LABEL_DETECTION).build();
-//        AnnotateImageRequest request =
-//                AnnotateImageRequest.newBuilder().addFeatures(feat).setImage(img).build();
-//        requests.add(request);
-//
-//        try (ImageAnnotatorClient client = ImageAnnotatorClient.create()) {
-//            BatchAnnotateImagesResponse response = client.batchAnnotateImages(requests);
-//            List<AnnotateImageResponse> responses = response.getResponsesList();
-//
-//            for (AnnotateImageResponse res : responses) {
-//                if (res.hasError()) {
-//                    out.printf("Error: %s\n", res.getError().getMessage());
-//                    return;
-//                }
-//
-//                // For full list of available annotations, see http://g.co/cloud/vision/docs
-//                for (EntityAnnotation annotation : res.getLabelAnnotationsList()) {
-//                    annotation.getAllFields().forEach((k, v) -> out.printf("%s : %s\n", k, v.toString()));
-//                }
-//            }
-//        }
-//    }
 }
